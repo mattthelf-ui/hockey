@@ -1,4 +1,4 @@
-const VERSION='hockey-v3';
+const VERSION='hockey-v4';
 const ASSETS=['./','./index.html','./game.js','./atlas.js','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png',...['rink','nets','skater-foxes','skater-owls','goalie-foxes','goalie-owls','referee','puck','crowd'].map(n=>'./art/'+n+'.png')];
 self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(VERSION).then(c=>c.addAll(ASSETS.map(u=>new Request(u,{cache:'reload'})))))});
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==VERSION).map(x=>caches.delete(x)))).then(()=>self.clients.claim())));

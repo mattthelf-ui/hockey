@@ -3,8 +3,9 @@
 // CPU (Owls) tuning. CPU_V1 = the v1 values, kept for comparison tests.
 const CPU_V1={spd:160,press:1.05,think:[0.4,0.8],engage:34,act:1,hitP:0.35,pokeP:0.45,pokeR:24,hitR:32,gap:0,react:0};
 const CPU_V2={spd:160,press:0.95,think:[0.6,1.05],engage:30,act:0.7,hitP:0.25,pokeP:0.35,pokeR:22,hitR:28,gap:1,react:0.18};
+const CPU_V4={spd:160,press:1.0,think:[0.4,0.7],engage:46,act:0.8,hitP:0.42,pokeP:0.4,pokeR:23,hitR:30,gap:0,react:0.12};
 const CPU_V3={spd:160,press:1.0,think:[0.5,0.95],engage:32,act:0.85,hitP:0.3,pokeP:0.4,pokeR:23,hitR:30,gap:0,react:0.12};
-let CPU=CPU_V3;
+let CPU=CPU_V4;
 const BL=165; // far edge of the blue lines (art: x=±160, 10 wide)
 const IW=600,IH=260,CR=100,GL=540,MOUTH=20,GAME_LEN=180;
 const cv=document.getElementById('c'),ctx=cv.getContext('2d');
@@ -77,7 +78,7 @@ function netBox(o,r){for(const s of[-1,1]){const x0=s*GL,x1=s*(GL+24);const lo=M
   if(Math.abs(px)<Math.abs(py)){o.x+=px;o.vx=-o.vx*0.4}else{o.y+=py;o.vy=-o.vy*0.4}}}}
 // ---------- AI ----------
 function aiSkater(p,dt){if(p===G.ctrl)return;const P=G.puck,d=dir(p.team),own=P.owner,mine=own&&own.team===p.team;
- p.think-=dt;let tx=p.tx,ty=p.ty,spd=p.team===0?175:CPU.spd;const C1=p.team===1;
+ p.think-=dt;let tx=p.tx,ty=p.ty,spd=p.team===0?175:CPU.spd;const C1=p.team===1;if(C1){p.accK=0;if(own&&own.team===0){manD(p,own,d,dt);return}}
  if(C1&&CPU.react>0){p.rt=(p.rt||0)-dt;if(p.rt>0){steer(p,p.tx,p.ty,spd,dt);return}p.rt=CPU.react}
  if(own===p){tx=d*(GL-60);ty=clamp(-p.y*0.3,-60,60);const dist=hyp(d*GL-p.x,p.y);
   const press=G.pl.some(o=>o.team!==p.team&&o.role==='S'&&hyp(o.x-p.x,o.y-p.y)<34);
@@ -96,17 +97,24 @@ function aiSkater(p,dt){if(p===G.ctrl)return;const P=G.puck,d=dir(p.team),own=P.
 function assignMen(){const F=G.pl.filter(q=>q.team===0&&q.role==='S'),O=G.pl.filter(q=>q.team===1&&q.role==='S'),nx=GL;
  const cost=pr=>pr.reduce((c,f,i)=>c+hyp(O[i].x-F[f].x,O[i].y-F[f].y),0);let best=G.assign,bc=cost(G.assign)-60;
  for(const pr of [[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]]){const c=cost(pr);if(c<bc){bc=c;best=pr}}G.assign=best}
-function manD(p,own,d,dt){const F=G.pl.filter(q=>q.team===0&&q.role==='S');
+function manD(p,own,d,dt){const F=G.pl.filter(q=>q.team===0&&q.role==='S'),O=G.pl.filter(q=>q.team===1&&q.role==='S'),nx=-d*GL;
  p.mt=(p.mt||0)-dt;if(p.i===0&&p.mt<0){p.mt=1.2;assignMen()}
- const man=F[G.assign[p.i]],nx=-d*GL,P=G.puck;
- const mx=man.x+man.vx*0.3,my=man.y+man.vy*0.3,dx=nx-mx,dy=-my,l=hyp(dx,dy)||1;let tx,ty,spd=CPU.spd;
- if((p.x-man.x)*-d<0||hyp(p.x-man.x,p.y-man.y)>70)spd=215; // recover goal-side
- if(man===own){tx=mx+dx/l*32;ty=my+dy/l*32;spd*=CPU.press;
-  if(p.think<0){p.think=rnd(CPU.think[0],CPU.think[1]);const dd=hyp(own.x-p.x,own.y-p.y);if(dd<CPU.engage&&Math.random()<CPU.act){Math.random()<CPU.hitP?hit(p):poke(p)}}}
- else{tx=mx+dx/l*42;ty=my+dy/l*42;const k=0.3;tx+=((own.x+man.x)/2-tx)*k;ty+=((own.y+man.y)/2-ty)*k;spd*=0.95}
- tx=clamp(tx,-IW+30,IW-30);ty=clamp(ty,-IH+25,IH-25);p.mark=man;steer(p,tx,ty,spd,dt);p.tx=tx;p.ty=ty}
+ if(G.lastCarrier!==own){G.lastCarrier=own; // pick up the new carrier at once: closest Owl to his goal-side spot takes him, swap marks
+  const ci=F.indexOf(own);let bi=0,bd=1e9;for(const o of O){const dd=hyp(o.x-own.x,o.y-own.y)+((o.x-own.x)*-d<0?60:0);if(dd<bd){bd=dd;bi=o.i}}
+  const cur=G.assign.indexOf(ci);if(cur!==bi){const t=G.assign[bi];G.assign[bi]=ci;G.assign[cur]=t}}
+ const man=F[G.assign[p.i]];
+ const mx=man.x+man.vx*0.4,my=man.y+man.vy*0.4,dx=nx-mx,dy=-my,l=hyp(dx,dy)||1,ux=dx/l,uy=dy/l;
+ const onCarrier=man===own,gap=onCarrier?31:44;
+ let tx=mx+ux*gap,ty=my+uy*gap;
+ if(!onCarrier){const k=0.25;tx+=((own.x+man.x)/2-tx)*k;ty+=((own.y+man.y)/2-ty)*k}
+ const behind=(p.x-man.x)*-d<0,far=hyp(p.x-man.x,p.y-man.y)>gap+25;
+ let spd=Math.max(CPU.spd,hyp(man.vx,man.vy)+20);
+ if(behind||far){spd=235;if(behind){const side=((p.x-man.x)*-uy+(p.y-man.y)*ux)>=0?1:-1;tx+=-uy*side*30+ux*20;ty+=ux*side*30+uy*20}} // swing around on a goal-side path
+ if(onCarrier&&p.think<0){p.think=rnd(CPU.think[0],CPU.think[1]);const dd=hyp(own.x-p.x,own.y-p.y);if(dd<CPU.engage&&!behind&&Math.random()<CPU.act){Math.random()<CPU.hitP?hit(p):poke(p)}}
+ tx=clamp(tx,-IW+30,IW-30);ty=clamp(ty,-IH+25,IH-25);p.mark=man;p.accK=8;
+ const ex=tx-p.x,ey=ty-p.y,el=hyp(ex,ey);if(el<4)accel(p,0,0,spd,dt);else{const k=Math.min(1,el/18);accel(p,ex/el*k,ey/el*k,spd,dt)}p.tx=tx;p.ty=ty}
 function steer(p,tx,ty,spd,dt){const dx=tx-p.x,dy=ty-p.y,l=hyp(dx,dy);if(l<6){accel(p,0,0,spd,dt);return}const k=Math.min(1,l/40);accel(p,dx/l*k,dy/l*k,spd,dt)}
-function accel(p,ix,iy,spd,dt){const tvx=ix*spd,tvy=iy*spd,a=Math.min(1,dt*(p.lunge>0?1:4));p.vx+=(tvx-p.vx)*a;p.vy+=(tvy-p.vy)*a;
+function accel(p,ix,iy,spd,dt){const tvx=ix*spd,tvy=iy*spd,a=Math.min(1,dt*(p.lunge>0?1:(p.accK||4)));p.vx+=(tvx-p.vx)*a;p.vy+=(tvy-p.vy)*a;
  if(hyp(ix,iy)>0.15){const ta=Math.atan2(iy,ix);p.a+=angDiff(p.a,ta)*Math.min(1,dt*10)}}
 function goalie(p,dt){const P=G.puck,d=dir(p.team),nx=-d*GL;let ty=clamp(P.y*0.25,-16,16),tx=nx+d*12;
  if(P.vx*d<-200&&!P.owner){const t=(nx+d*12-P.x)/P.vx;if(t>0&&t<0.6)ty=clamp(P.y+P.vy*t,-20,20)}
