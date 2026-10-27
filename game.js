@@ -1,5 +1,9 @@
 'use strict';
 // Hockey Rush v1: Blaze Foxes (player, attack +X) vs Frost Owls (CPU, attack -X). World units = rink px, origin centre ice.
+// CPU (Owls) tuning. CPU_V1 = the v1 values, kept for comparison tests.
+const CPU_V1={spd:160,press:1.05,think:[0.4,0.8],engage:34,act:1,hitP:0.35,pokeP:0.45,pokeR:24,hitR:32,gap:0,react:0};
+const CPU_V2={spd:160,press:0.95,think:[0.6,1.05],engage:30,act:0.7,hitP:0.25,pokeP:0.35,pokeR:22,hitR:28,gap:1,react:0.18};
+let CPU=CPU_V2;
 const IW=600,IH=260,CR=100,GL=540,MOUTH=20,GAME_LEN=180;
 const cv=document.getElementById('c'),ctx=cv.getContext('2d');
 const IMG={};for(const n of ['rink','nets','skater-foxes','skater-owls','goalie-foxes','goalie-owls','referee','puck','crowd']){IMG[n]=new Image();IMG[n].src='art/'+n+'.png'}
@@ -12,7 +16,7 @@ const angDiff=(a,b)=>{let d=b-a;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+
 // ---------- state ----------
 let G;
 function newGame(){G={t:GAME_LEN,score:[0,0],phase:'faceoff',pt:1.6,cheer:0,cheerTeam:0,over:false,flash:'',stats:{goals:0,pokes:0,hits:0,switches:0,passes:0,shots:0,saves:0,dekes:0},
- puck:{x:0,y:0,vx:0,vy:0,owner:null,lock:0,lockP:null,shot:0,checked:false,last:null},pl:[],ctrl:null,ref:{x:0,y:-60,vx:0,vy:0,a:Math.PI/2,an:'idle',at:0}};
+ puck:{x:0,y:0,vx:0,vy:0,owner:null,lock:0,lockP:null,shot:0,checked:false,last:null},pl:[],ctrl:null,cpu:{pokeTry:0,steals:0,hitTry:0,hitsLanded:0,ctrlLost:0,ctrlPoss:0},ref:{x:0,y:-60,vx:0,vy:0,a:Math.PI/2,an:'idle',at:0}};
  for(let t=0;t<2;t++){for(let i=0;i<3;i++)G.pl.push(mk(t,'S',i));G.pl.push(mk(t,'G',0))}
  G.ctrl=G.pl[0];faceoff();window.G=G}
 function mk(team,role,i){return{team,role,i,x:0,y:0,vx:0,vy:0,a:0,an:'idle',at:0,once:0,stun:0,cd:0,deke:0,lunge:0,hp:0,think:0,tx:0,ty:0}}
@@ -55,9 +59,9 @@ function pass(p,human){const mates=G.pl.filter(q=>q.team===p.team&&q!==p&&q.role
 function segDist(o,a,b){const vx=b.x-a.x,vy=b.y-a.y,l=vx*vx+vy*vy||1,t=clamp(((o.x-a.x)*vx+(o.y-a.y)*vy)/l,0,1);return hyp(a.x+vx*t-o.x,a.y+vy*t-o.y)}
 function deke(p){if(p.cd>0)return;p.cd=1;p.deke=0.7;const s=Math.random()<0.5?1:-1,a=p.a+s*1.1;p.vx+=Math.cos(a)*140;p.vy+=Math.sin(a)*140;play(p,'deke');if(p===G.ctrl)G.stats.dekes++}
 function poke(p){if(p.cd>0)return;p.cd=0.6;play(p,'poke_check');const P=G.puck,[sx,sy]=[p.x+Math.cos(p.a)*26,p.y+Math.sin(p.a)*26];
- if(hyp(P.x-sx,P.y-sy)<24){const o=P.owner;if(o&&o.team===p.team)return;if(o&&o.deke>0)return;
-  if(!o||Math.random()<(p.team===0?0.75:0.45)){if(o){o.cd=0.5}P.owner=null;P.vx=Math.cos(p.a)*120+rnd(-40,40);P.vy=Math.sin(p.a)*120+rnd(-40,40);P.lock=0.2;P.lockP=o;if(p===G.ctrl&&o)G.stats.pokes++;}}}
-function hit(p){if(p.cd>0)return;p.cd=0.9;p.lunge=0.25;p.vx+=Math.cos(p.a)*170;p.vy+=Math.sin(p.a)*170;play(p,'hit')}
+ if(p.team===1)G.cpu.pokeTry++;if(hyp(P.x-sx,P.y-sy)<(p.team===1?CPU.pokeR:24)){const o=P.owner;if(o&&o.team===p.team)return;if(o&&o.deke>0)return;
+  if(!o||Math.random()<(p.team===0?0.75:CPU.pokeP)){if(o){o.cd=0.5;if(p.team===1){G.cpu.steals++;if(o===G.ctrl)G.cpu.ctrlLost++}}P.owner=null;P.vx=Math.cos(p.a)*120+rnd(-40,40);P.vy=Math.sin(p.a)*120+rnd(-40,40);P.lock=0.2;P.lockP=o;if(p===G.ctrl&&o)G.stats.pokes++;}}}
+function hit(p){if(p.cd>0)return;if(p.team===1)G.cpu.hitTry++;p.cd=0.9;p.lunge=0.25;p.vx+=Math.cos(p.a)*170;p.vy+=Math.sin(p.a)*170;play(p,'hit')}
 function switchP(){const P=G.puck;let best=null,bd=1e9;for(const q of G.pl)if(q.team===0&&q.role==='S'&&q!==G.ctrl){const d=hyp(q.x-P.x,q.y-P.y);if(d<bd){bd=d;best=q}}
  if(best){G.ctrl=best;G.stats.switches++}}
 // ---------- physics ----------
@@ -71,15 +75,17 @@ function netBox(o,r){for(const s of[-1,1]){const x0=s*GL,x1=s*(GL+24);const lo=M
   if(Math.abs(px)<Math.abs(py)){o.x+=px;o.vx=-o.vx*0.4}else{o.y+=py;o.vy=-o.vy*0.4}}}}
 // ---------- AI ----------
 function aiSkater(p,dt){if(p===G.ctrl)return;const P=G.puck,d=dir(p.team),own=P.owner,mine=own&&own.team===p.team;
- p.think-=dt;let tx=p.tx,ty=p.ty,spd=p.team===0?175:160;
+ p.think-=dt;let tx=p.tx,ty=p.ty,spd=p.team===0?175:CPU.spd;const C1=p.team===1;
+ if(C1&&CPU.react>0){p.rt=(p.rt||0)-dt;if(p.rt>0){steer(p,p.tx,p.ty,spd,dt);return}p.rt=CPU.react}
  if(own===p){tx=d*(GL-60);ty=clamp(-p.y*0.3,-60,60);const dist=hyp(d*GL-p.x,p.y);
   const press=G.pl.some(o=>o.team!==p.team&&o.role==='S'&&hyp(o.x-p.x,o.y-p.y)<34);
   if(p.think<0){p.think=rnd(0.25,0.5);if(dist<230&&Math.abs(p.y)<150&&Math.random()<0.55)shoot(p);else if(press&&Math.random()<0.4)pass(p);else if(press&&Math.random()<0.25)deke(p)}}
  else if(mine){const lane=[0,-110,110][p.i];tx=clamp(own.x+d*120,-IW+60,IW-60);ty=lane||(own.y>0?-80:80)}
  else{ // defend / loose puck
   const chasers=G.pl.filter(q=>q.team===p.team&&q.role==='S').sort((a,b)=>hyp(a.x-P.x,a.y-P.y)-hyp(b.x-P.x,b.y-P.y));
-  if(chasers[0]===p||(p===chasers[1]&&!own)){tx=P.x+P.vx*0.15;ty=P.y+P.vy*0.15;spd*=1.05;
-   if(own&&p.think<0){p.think=rnd(0.4,0.8);const dd=hyp(own.x-p.x,own.y-p.y);if(dd<34){Math.random()<(p.team===1?0.35:0.5)?hit(p):poke(p)}}}
+  if(chasers[0]===p||(p===chasers[1]&&!own)){tx=P.x+P.vx*0.15;ty=P.y+P.vy*0.15;spd*=C1?CPU.press:1.05;
+   if(C1&&CPU.gap&&own&&hyp(own.x+d*GL,own.y)>380){const nx=-d*GL,l=hyp(own.x-nx,own.y)||1;tx=own.x+(nx-own.x)/l*55;ty=own.y+(-own.y)/l*55}
+   if(own&&p.think<0){p.think=C1?rnd(CPU.think[0],CPU.think[1]):rnd(0.4,0.8);const dd=hyp(own.x-p.x,own.y-p.y);if(dd<(C1?CPU.engage:34)&&(!C1||Math.random()<CPU.act)){Math.random()<(C1?CPU.hitP:0.5)?hit(p):poke(p)}}}
   else{tx=(P.x-d*GL)*0.5-d*GL*0.0;tx=P.x-d*110;ty=P.y*0.5+[0,-70,70][p.i]*0.6;tx=clamp(tx,-IW+60,IW-60)}}
  if(p===G.ctrl&&p.team===0)return;steer(p,tx,ty,spd,dt);p.tx=tx;p.ty=ty}
 function steer(p,tx,ty,spd,dt){const dx=tx-p.x,dy=ty-p.y,l=hyp(dx,dy);if(l<6){accel(p,0,0,spd,dt);return}const k=Math.min(1,l/40);accel(p,dx/l*k,dy/l*k,spd,dt)}
@@ -113,11 +119,11 @@ function update(dt){if(!G||G.over)return;const P=G.puck;
  // skater collisions + hits
  const S=G.pl.filter(p=>p.role==='S');
  for(let i=0;i<S.length;i++)for(let j=i+1;j<S.length;j++){const a=S[i],b=S[j],dx=b.x-a.x,dy=b.y-a.y,d=hyp(dx,dy)||1;
-  for(const [h,v] of [[a,b],[b,a]])if(h.lunge>0&&h.team!==v.team&&v.stun<=0&&d<32&&v.deke<=0){v.stun=1.2;play(v,'fallen');v.once=1.2;v.vx=h.vx*0.7;v.vy=h.vy*0.7;h.lunge=0;
+  for(const [h,v] of [[a,b],[b,a]])if(h.lunge>0&&h.team!==v.team&&v.stun<=0&&d<(h.team===1?CPU.hitR:32)&&v.deke<=0){if(h.team===1){G.cpu.hitsLanded++;if(v===G.ctrl&&P.owner===v)G.cpu.ctrlLost++}v.stun=1.2;play(v,'fallen');v.once=1.2;v.vx=h.vx*0.7;v.vy=h.vy*0.7;h.lunge=0;
    if(P.owner===v){P.owner=null;P.vx=h.vx*0.8+rnd(-60,60);P.vy=h.vy*0.8+rnd(-60,60);P.lock=0.25;P.lockP=v}if(h===G.ctrl)G.stats.hits++;G.flash='BIG HIT!';G.flt=0.8}
   if(d<24){const o=(24-d)/2;a.x-=dx/d*o;a.y-=dy/d*o;b.x+=dx/d*o;b.y+=dy/d*o}}
  // puck
- if(P.lock>0)P.lock-=dt;
+ if(P.lock>0)P.lock-=dt;if(P.owner&&P.owner===G.ctrl)G.cpu.ctrlPoss+=dt;
  if(P.owner){const o=P.owner;const [sx,sy]=stickPt(o);P.x=sx;P.y=sy;P.vx=o.vx;P.vy=o.vy;if(o.stun>0)P.owner=null}
  else{const steps=3;for(let k=0;k<steps;k++){P.x+=P.vx*dt/steps;P.y+=P.vy*dt/steps;if(live)checkGoal();if(G.phase!=='play'&&live)break;if(boards(P,4,0.6))P.shot=0;netBox(P,4)}
   const f=Math.pow(0.55,dt);P.vx*=f;P.vy*=f;
