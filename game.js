@@ -20,7 +20,7 @@ const angDiff=(a,b)=>{let d=b-a;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+
 // ---------- state ----------
 let G;
 function newGame(){G={t:GAME_LEN,score:[0,0],phase:'faceoff',pt:1.6,cheer:0,cheerTeam:0,over:false,flash:'',stats:{goals:0,pokes:0,hits:0,switches:0,passes:0,shots:0,saves:0,dekes:0},
- puck:{x:0,y:0,vx:0,vy:0,owner:null,lock:0,lockP:null,shot:0,checked:false,last:null},pl:[],ctrl:null,goalLog:[],offLog:[],off:null,clock:0,assign:[0,1,2],fo:[0,0],cpu:{pokeTry:0,steals:0,hitTry:0,hitsLanded:0,ctrlLost:0,ctrlPoss:0},ref:{x:0,y:-60,vx:0,vy:0,a:Math.PI/2,an:'idle',at:0}};
+ puck:{x:0,y:0,vx:0,vy:0,owner:null,lock:0,lockP:null,shot:0,checked:false,last:null},pl:[],ctrl:null,tac:{o:'bal',d:'bal'},goalLog:[],offLog:[],off:null,clock:0,assign:[0,1,2],fo:[0,0],cpu:{pokeTry:0,steals:0,hitTry:0,hitsLanded:0,ctrlLost:0,ctrlPoss:0},ref:{x:0,y:-60,vx:0,vy:0,a:Math.PI/2,an:'idle',at:0}};
  for(let t=0;t<2;t++){for(let i=0;i<3;i++)G.pl.push(mk(t,'S',i));G.pl.push(mk(t,'G',0))}
  G.ctrl=G.pl[0];faceoff();window.G=G}
 function mk(team,role,i){return{team,role,i,x:0,y:0,vx:0,vy:0,a:0,an:'idle',at:0,once:0,stun:0,cd:0,deke:0,lunge:0,hp:0,think:0,tx:0,ty:0}}
@@ -39,6 +39,14 @@ const b4=document.getElementById('b4');b4.addEventListener('pointerdown',e=>{e.p
 // v5 BOOST (offence only): 1.5x skate speed for 1s, 3s cooldown. Placeholder button visuals.
 const BOOST_MUL=1.5,BOOST_T=1,BOOST_CD=3;
 function boost(){if(!G||G.phase!=='play'||!offence()||G.bcd>0)return;const p=G.ctrl;if(p.stun>0)return;p.boost=BOOST_T;G.bcd=BOOST_CD;G.stats.boosts=(G.stats.boosts||0)+1}
+// v6 team tactics (placeholder UI). Game keeps running while the picker is open.
+const TAC={o:[['bal','BALANCED'],['crash','CRASH NET'],['cycle','CYCLE']],d:[['bal','BALANCED'],['aggr','FORECHECK'],['trap','TRAP']]};
+const tacB=document.getElementById('tac'),tacP=document.getElementById('tacp');
+function tacMode(){return offence()?'o':'d'}
+function tacShow(){const m=tacMode();tacP.innerHTML=TAC[m].map(([k,n])=>`<div class="tp${G.tac[m]===k?' on':''}" data-k="${k}">${n}</div>`).join('');tacP.dataset.m=m;tacP.style.display='flex'}
+tacB.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();if(!G)return;tacP.style.display==='flex'?tacP.style.display='none':tacShow()});
+tacP.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();const k=e.target.dataset&&e.target.dataset.k;if(k&&G){G.tac[tacP.dataset.m]=k;G.stats.tac=(G.stats.tac||0)+1}tacP.style.display='none'});
+function tacLabel(){const m=tacMode(),n=TAC[m].find(x=>x[0]===G.tac[m])[1];return (m==='o'?'⚔ ':'🛡 ')+n}
 const b1=document.getElementById('b1'),b2=document.getElementById('b2'),b3=document.getElementById('b3');
 for(const [el,n] of [[b1,1],[b2,2],[b3,3]]){el.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();el.classList.add('on');press(n)});
  for(const ev of ['pointerup','pointercancel','pointerleave'])el.addEventListener(ev,()=>el.classList.remove('on'))}
@@ -89,14 +97,18 @@ function aiSkater(p,dt){if(p===G.ctrl)return;const P=G.puck,d=dir(p.team),own=P.
  if(own===p){tx=d*(GL-60);ty=clamp(-p.y*0.3,-60,60);const dist=hyp(d*GL-p.x,p.y);
   const press=G.pl.some(o=>o.team!==p.team&&o.role==='S'&&hyp(o.x-p.x,o.y-p.y)<34);
   if(p.think<0){p.think=rnd(0.25,0.5);if(dist<230&&Math.abs(p.y)<150&&Math.random()<0.55)shoot(p);else if(press&&Math.random()<0.4)pass(p);else if(press&&Math.random()<0.25)deke(p)}}
- else if(mine){const lane=[0,-110,110][p.i];tx=clamp(own.x+d*120,-IW+60,IW-60);ty=lane||(own.y>0?-80:80)}
+ else if(mine){const lane=[0,-110,110][p.i];tx=clamp(own.x+d*120,-IW+60,IW-60);ty=lane||(own.y>0?-80:80);
+  if(p.team===0&&G.tac.o==='crash'){tx=d*(GL-70);ty=(lane||(own.y>0?-60:60))*0.35} // drive the net
+  else if(p.team===0&&G.tac.o==='cycle'){tx=d*(GL-110);ty=(lane||(own.y>0?-1:1)*110)>0?190:-190;if(own.x*d<BL)tx=clamp(own.x+d*90,-IW+60,IW-60)}} // low, along the boards
  else{ // defend / loose puck
   if(C1&&own&&own.team!==p.team){manD(p,own,d,dt);return}
   const chasers=G.pl.filter(q=>q.team===p.team&&q.role==='S').sort((a,b)=>hyp(a.x-P.x,a.y-P.y)-hyp(b.x-P.x,b.y-P.y));
-  if(chasers[0]===p||(p===chasers[1]&&!own)){tx=P.x+P.vx*0.15;ty=P.y+P.vy*0.15;spd*=C1?CPU.press:1.05;
+  const T0=p.team===0?G.tac.d:'bal',trapHold=T0==='trap'&&P.x*-d<-BL&&chasers[0]===p;
+  if(!trapHold&&(chasers[0]===p||(p===chasers[1]&&(!own||T0==='aggr'))&&T0!=='trap'||(T0==='trap'&&chasers[0]===p))){if(T0==='aggr')spd*=1.1;tx=P.x+P.vx*0.15;ty=P.y+P.vy*0.15;spd*=C1?CPU.press:1.05;
    if(C1&&CPU.gap&&own&&hyp(own.x+d*GL,own.y)>380){const nx=-d*GL,l=hyp(own.x-nx,own.y)||1;tx=own.x+(nx-own.x)/l*55;ty=own.y+(-own.y)/l*55}
    if(own&&p.think<0){p.think=C1?rnd(CPU.think[0],CPU.think[1]):rnd(0.4,0.8);const dd=hyp(own.x-p.x,own.y-p.y);if(dd<(C1?CPU.engage:34)&&(!C1||Math.random()<CPU.act)){Math.random()<(C1?CPU.hitP:0.5)?hit(p):poke(p)}}}
-  else{tx=(P.x-d*GL)*0.5-d*GL*0.0;tx=P.x-d*110;ty=P.y*0.5+[0,-70,70][p.i]*0.6;tx=clamp(tx,-IW+60,IW-60)}}
+  else if(T0==='trap'){tx=-d*40+(trapHold?d*60:0);ty=[0,-90,90][p.i]+P.y*0.25} // clog the neutral zone
+  else{tx=(P.x-d*GL)*0.5-d*GL*0.0;tx=P.x-d*(T0==='aggr'?50:110);ty=P.y*0.5+[0,-70,70][p.i]*0.6;tx=clamp(tx,-IW+60,IW-60)}}
  if(own!==p&&P.x*d<=BL)tx=d>0?Math.min(tx,BL-18):Math.max(tx,-BL+18);
  if(G.off&&G.off.team===p.team&&own!==p)tx=d>0?Math.min(tx,BL-25):Math.max(tx,-BL+25);
  if(p===G.ctrl&&p.team===0)return;steer(p,tx,ty,spd,dt);p.tx=tx;p.ty=ty}
@@ -208,6 +220,7 @@ function draw(){ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#0a1426';ctx.fillRe
  if(stick.id!==null){ctx.globalAlpha=0.5;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(stick.ox,stick.oy,50,0,7);ctx.fill();ctx.globalAlpha=0.8;ctx.beginPath();ctx.arc(stick.ox+stick.dx*50,stick.oy+stick.dy*50,24,0,7);ctx.fill();ctx.globalAlpha=1}
  else{ctx.globalAlpha=0.25;ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.beginPath();ctx.arc(90,H-90,50,0,7);ctx.stroke();ctx.globalAlpha=1}
  {const f=G.bcd>0?1-G.bcd/BOOST_CD:1;b4.style.background=`conic-gradient(#ffd23acc ${f*360}deg,#0008 0)`;b4.style.opacity=G.bcd>0?0.6:1}
+ tacB.textContent=tacLabel();if(tacP.style.display==='flex'&&tacP.dataset.m!==tacMode())tacShow();
  document.getElementById('s0').textContent=G.score[0];document.getElementById('s1').textContent=G.score[1];
  const t=Math.ceil(G.t);document.getElementById('clk').textContent=Math.floor(t/60)+':'+String(t%60).padStart(2,'0');
  document.getElementById('msg').textContent=G.over?'':G.phase==='faceoff'?(G.pt>0.6?'FACEOFF':'GO!'):G.flash||'';document.getElementById('doff').style.display=G.off&&G.phase==='play'?'block':'none'}
