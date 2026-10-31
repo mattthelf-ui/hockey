@@ -1,5 +1,6 @@
 'use strict';
-// Hockey Rush v1: Blaze Foxes (player, attack +X) vs Frost Owls (CPU, attack -X). World units = rink px, origin centre ice.
+// Hockey Rush: Blaze Foxes (player, attack +X) vs Frost Owls (CPU, attack -X). World units = rink px, origin centre ice.
+// v5: the view is rotated so world +X points UP the screen (north-south play). Screen (sx,sy) = (wy,-wx); input maps back with stickW().
 // CPU (Owls) tuning. CPU_V1 = the v1 values, kept for comparison tests.
 const CPU_V1={spd:160,press:1.05,think:[0.4,0.8],engage:34,act:1,hitP:0.35,pokeP:0.45,pokeR:24,hitR:32,gap:0,react:0};
 const CPU_V2={spd:160,press:0.95,think:[0.6,1.05],engage:30,act:0.7,hitP:0.25,pokeP:0.35,pokeR:22,hitR:28,gap:1,react:0.18};
@@ -33,15 +34,20 @@ function faceoff(fx,fy){fx=fx||0;fy=fy||0;const P=G.puck;G.off=null;Object.assig
 const stick={id:null,ox:0,oy:0,x:0,y:0,dx:0,dy:0};const btn={1:0,2:0,3:0};
 function offence(){const o=G.puck.owner;return o&&o.team===0}
 function setLabels(){const of=offence();b1.textContent=of?'SHOOT':'POKE\nCHECK';b2.textContent=of?'PASS':'SWITCH';b3.textContent=of?'DEKE':'HIT';
- b1.style.whiteSpace=b2.style.whiteSpace='pre-line'}
+ b1.style.whiteSpace=b2.style.whiteSpace='pre-line';b4.style.display=of?'flex':'none'}
+const b4=document.getElementById('b4');b4.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();boost()});
+// v5 BOOST (offence only): 1.5x skate speed for 1s, 3s cooldown. Placeholder button visuals.
+const BOOST_MUL=1.5,BOOST_T=1,BOOST_CD=3;
+function boost(){if(!G||G.phase!=='play'||!offence()||G.bcd>0)return;const p=G.ctrl;if(p.stun>0)return;p.boost=BOOST_T;G.bcd=BOOST_CD;G.stats.boosts=(G.stats.boosts||0)+1}
 const b1=document.getElementById('b1'),b2=document.getElementById('b2'),b3=document.getElementById('b3');
 for(const [el,n] of [[b1,1],[b2,2],[b3,3]]){el.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();el.classList.add('on');press(n)});
  for(const ev of ['pointerup','pointercancel','pointerleave'])el.addEventListener(ev,()=>el.classList.remove('on'))}
 cv.addEventListener('pointerdown',e=>{if(stick.id!==null||e.clientX>innerWidth*0.55)return;stick.id=e.pointerId;stick.ox=stick.x=e.clientX;stick.oy=stick.y=e.clientY;upd(e)});
 addEventListener('pointermove',e=>{if(e.pointerId===stick.id){stick.x=e.clientX;stick.y=e.clientY;upd(e)}});
 for(const ev of ['pointerup','pointercancel'])addEventListener(ev,e=>{if(e.pointerId===stick.id){stick.id=null;stick.dx=stick.dy=0}});
+function stickW(){return[-stick.dy,stick.dx]} // screen stick -> world direction
 function upd(){let dx=stick.x-stick.ox,dy=stick.y-stick.oy,l=hyp(dx,dy),R=50;if(l>R){stick.ox=stick.x-dx/l*R;stick.oy=stick.y-dy/l*R;dx=dx/l*R;dy=dy/l*R}stick.dx=dx/R;stick.dy=dy/R}
-const keys={};addEventListener('keydown',e=>{keys[e.key]=1;if(e.key==='j')press(1);if(e.key==='k')press(2);if(e.key==='l')press(3)});addEventListener('keyup',e=>keys[e.key]=0);
+const keys={};addEventListener('keydown',e=>{keys[e.key]=1;if(e.key==='j')press(1);if(e.key==='k')press(2);if(e.key==='l')press(3);if(e.key===' ')boost()});addEventListener('keyup',e=>keys[e.key]=0);
 function press(n){if(!G||G.phase!=='play')return;const p=G.ctrl;if(p.stun>0)return;
  if(offence()){if(G.puck.owner!==p)return; if(n===1)shoot(p);else if(n===2)pass(p,true);else deke(p)}
  else{if(n===1)poke(p);else if(n===2)switchP();else hit(p)}}
@@ -51,10 +57,10 @@ function stickPt(p){return[p.x+Math.cos(p.a)*15,p.y+Math.sin(p.a)*15]}
 function release(p,vx,vy){const P=G.puck;P.passer=null;P.owner=null;P.vx=vx;P.vy=vy;P.lock=0.3;P.lockP=p;P.checked=false;P.last=p}
 function shoot(p){const d=dir(p.team),gx=d*GL,gy=0;const opp=G.pl.find(q=>q.team!==p.team&&q.role==='G');
  let ty=opp.y>0?-13:13;ty+=rnd(-5,5);let a=Math.atan2(ty-p.y,gx-p.x);
- if(p===G.ctrl&&hyp(stick.dx,stick.dy)>0.5){const sa=Math.atan2(stick.dy,stick.dx);if(Math.abs(angDiff(sa,a))<0.9)a+=angDiff(a,sa)*0.35}
+ if(p===G.ctrl&&hyp(stick.dx,stick.dy)>0.5){const [wx,wy]=stickW(),sa=Math.atan2(wy,wx);if(Math.abs(angDiff(sa,a))<0.9)a+=angDiff(a,sa)*0.35}
  const sp=p.team===0?620:560;p.a=a;release(p,Math.cos(a)*sp,Math.sin(a)*sp);G.puck.shot=1;play(p,'shoot');if(G.off&&G.off.team===p.team)whistle('shot');if(p===G.ctrl)G.stats.shots++}
 function pass(p,human){const mates=G.pl.filter(q=>q.team===p.team&&q!==p&&q.role==='S');let face=p.a;
- if(human&&hyp(stick.dx,stick.dy)>0.4)face=Math.atan2(stick.dy,stick.dx);
+ if(human&&hyp(stick.dx,stick.dy)>0.4){const [wx,wy]=stickW();face=Math.atan2(wy,wx)}
  let best=null,bs=-1e9;for(const m of mates){const a=Math.atan2(m.y-p.y,m.x-p.x),dd=hyp(m.x-p.x,m.y-p.y);
   let s=-Math.abs(angDiff(face,a))*120-Math.abs(dd-160)*0.2;for(const o of G.pl)if(o.team!==p.team&&segDist(o,p,m)<18)s-=80;if(s>bs){bs=s;best=m}}
  if(!best)return;const lx=best.x+best.vx*0.3,ly=best.y+best.vy*0.3,a=Math.atan2(ly-p.y,lx-p.x),sp=clamp(hyp(lx-p.x,ly-p.y)*1.6+180,300,520);
@@ -133,12 +139,12 @@ function update(dt){if(!G||G.over)return;const P=G.puck;
  else if(G.phase==='whistle'){G.pt-=dt;if(G.pt<=0)faceoff(G.wfo[0],G.wfo[1])}
  else if(G.phase==='goal'){G.pt-=dt;if(G.pt<=0){if(G.t<=0)end();else faceoff()}}
  else{G.t-=dt;if(G.t<=0){G.t=0;G.phase='goal';G.pt=1.5;G.flash='FINAL HORN';return}}
- const live=G.phase==='play';G.clock+=dt;if(live)offside();
- for(const p of G.pl){p.at+=dt;if(p.once>0){p.once-=dt;if(p.once<=0)p.an='idle'}p.cd=Math.max(0,p.cd-dt);p.deke=Math.max(0,p.deke-dt);p.lunge=Math.max(0,p.lunge-dt);
+ G.bcd=Math.max(0,(G.bcd||0)-dt);const live=G.phase==='play';G.clock+=dt;if(live)offside();
+ for(const p of G.pl){p.at+=dt;if(p.once>0){p.once-=dt;if(p.once<=0)p.an='idle'}p.cd=Math.max(0,p.cd-dt);p.deke=Math.max(0,p.deke-dt);p.lunge=Math.max(0,p.lunge-dt);p.boost=Math.max(0,(p.boost||0)-dt);
   if(p.role==='G'){if(live)goalie(p,dt);continue}
   if(p.stun>0){p.stun-=dt;p.vx*=0.95;p.vy*=0.95;if(p.stun<=0)p.an='idle'}
-  else if(live){aiSkater(p,dt);if(p===G.ctrl){let ix=stick.dx,iy=stick.dy;if(keys.ArrowLeft||keys.a)ix=-1;if(keys.ArrowRight||keys.d)ix=1;if(keys.ArrowUp||keys.w)iy=-1;if(keys.ArrowDown||keys.s)iy=1;
-    const l=hyp(ix,iy);if(l>1){ix/=l;iy/=l}accel(p,ix,iy,p.deke>0?210:185,dt)}}
+  else if(live){aiSkater(p,dt);if(p===G.ctrl){let [ix,iy]=stickW();if(keys.ArrowLeft||keys.a)iy=-1;if(keys.ArrowRight||keys.d)iy=1;if(keys.ArrowUp||keys.w)ix=1;if(keys.ArrowDown||keys.s)ix=-1;
+    const l=hyp(ix,iy);if(l>1){ix/=l;iy/=l}accel(p,ix,iy,(p.deke>0?210:185)*(p.boost>0?BOOST_MUL:1),dt)}}
   else{p.vx*=0.9;p.vy*=0.9}
   p.x+=p.vx*dt;p.y+=p.vy*dt;boards(p,12,0.2);netBox(p,12);
   if(p.once<=0&&p.stun<=0)p.an=hyp(p.vx,p.vy)>25?'skate':'idle'}
@@ -180,9 +186,10 @@ function end(){G.over=true;G.phase='over';const [a,b]=G.score;document.getElemen
 let W=0,H=0,DPR=1,cam={x:0,y:0};
 function resize(){DPR=Math.min(devicePixelRatio||1,3);W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR}addEventListener('resize',resize);resize();
 function draw(){ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#0a1426';ctx.fillRect(0,0,cv.width,cv.height);if(!G)return;
- const z=Math.max(H/350,W/680),vw=W/z,vh=H/z,P=G.puck;
- const tx=clamp(P.x,-IW-60+vw/2,IW+60-vw/2),ty=clamp(P.y,-IH-100+vh/2,IH+100-vh/2);cam.x+=(tx-cam.x)*0.12;cam.y+=(ty-cam.y)*0.12;
- ctx.setTransform(DPR*z,0,0,DPR*z,DPR*(W/2-cam.x*z),DPR*(H/2-cam.y*z));ctx.imageSmoothingQuality='high';
+ // portrait: screen width shows the rink's width (world y), screen height its length (world x)
+ const z=Math.max(W/350,H/680),vx=H/z,vy=W/z,P=G.puck;
+ const tx=vx/2>=IW+60?0:clamp(P.x,-IW-60+vx/2,IW+60-vx/2),ty=vy/2>=IH+100?0:clamp(P.y,-IH-100+vy/2,IH+100-vy/2);cam.x+=(tx-cam.x)*0.12;cam.y+=(ty-cam.y)*0.12;
+ ctx.setTransform(0,-DPR*z,DPR*z,0,DPR*(W/2-cam.y*z),DPR*(H/2+cam.x*z));ctx.imageSmoothingQuality='high';
  // crowd
  const cf=G.cheer>0?('cheer-'+(G.cheerTeam===0?'foxes':'owls')):'neutral',fi=Math.floor(performance.now()/1000*(G.cheer>0?4:2))%2,ck=cf+'_0'+fi;
  for(let x=-704;x<=704;x+=128){spr('crowd',ck,x,-322);spr('crowd',ck,x,322,Math.PI)}
@@ -193,13 +200,14 @@ function draw(){ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#0a1426';ctx.fillRe
  // control ring
  const c=G.ctrl;ctx.strokeStyle='#ffd23a';ctx.lineWidth=2.5;ctx.beginPath();ctx.ellipse(c.x,c.y,17,17,0,0,Math.PI*2);ctx.stroke();
  const R=G.ref;spr('referee',fr(R),R.x,R.y,R.a);
- const L=G.pl.slice().sort((a,b)=>a.y-b.y);
+ const L=G.pl.slice().sort((a,b)=>b.x-a.x);
  for(const p of L){const sh=(p.role==='G'?'goalie-':'skater-')+(p.team===0?'foxes':'owls');spr(sh,fr(p),p.x,p.y,p.a)}
  spr('puck',P.owner||hyp(P.vx,P.vy)<20?'idle_00':'spin_0'+(Math.floor(performance.now()/60)%4),P.x,P.y);
  // control arrow when off-screen not needed; draw stick
  ctx.setTransform(DPR,0,0,DPR,0,0);
  if(stick.id!==null){ctx.globalAlpha=0.5;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(stick.ox,stick.oy,50,0,7);ctx.fill();ctx.globalAlpha=0.8;ctx.beginPath();ctx.arc(stick.ox+stick.dx*50,stick.oy+stick.dy*50,24,0,7);ctx.fill();ctx.globalAlpha=1}
  else{ctx.globalAlpha=0.25;ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.beginPath();ctx.arc(90,H-90,50,0,7);ctx.stroke();ctx.globalAlpha=1}
+ {const f=G.bcd>0?1-G.bcd/BOOST_CD:1;b4.style.background=`conic-gradient(#ffd23acc ${f*360}deg,#0008 0)`;b4.style.opacity=G.bcd>0?0.6:1}
  document.getElementById('s0').textContent=G.score[0];document.getElementById('s1').textContent=G.score[1];
  const t=Math.ceil(G.t);document.getElementById('clk').textContent=Math.floor(t/60)+':'+String(t%60).padStart(2,'0');
  document.getElementById('msg').textContent=G.over?'':G.phase==='faceoff'?(G.pt>0.6?'FACEOFF':'GO!'):G.flash||'';document.getElementById('doff').style.display=G.off&&G.phase==='play'?'block':'none'}
