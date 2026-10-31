@@ -9,12 +9,13 @@ const CPU_V3={spd:160,press:1.0,think:[0.5,0.95],engage:32,act:0.85,hitP:0.3,pok
 let CPU=CPU_V4;
 const BL=165; // far edge of the blue lines (art: x=±160, 10 wide)
 // v7: net hitbox matches Vex's v2 net art (86 wide x 52 deep rink units; v1 art/hitbox was 40 x 24)
-const IW=600,IH=260,CR=100,GL=540,MOUTH=43,ND=52,GAME_LEN=180;
+// v8: goals 'somewhere in between': 60 wide x 36 deep; net art scaled to match (NS)
+const IW=600,IH=260,CR=100,GL=540,MOUTH=30,ND=36,NS=60/86,GAME_LEN=180;
 const cv=document.getElementById('c'),ctx=cv.getContext('2d');
-const IMG={};for(const n of ['referee','puck','crowd']){IMG[n]=new Image();IMG[n].src='art/'+n+'.png?v=7'} // v1 art (faces +X)
-const SC=(devicePixelRatio||1)>2.2?3:2,A2=ATLAS2[SC],IMG2={};for(const n of ['skater-foxes','skater-owls','goalie-foxes','goalie-owls','boost','rink','nets']){IMG2[n]=new Image();IMG2[n].src=`art/v2/${n}@${SC}x.png?v=7`}
+const IMG={};for(const n of ['referee','puck','crowd']){IMG[n]=new Image();IMG[n].src='art/'+n+'.png?v=8'} // v1 art (faces +X)
+const SC=(devicePixelRatio||1)>2.2?3:2,A2=ATLAS2[SC],IMG2={};for(const n of ['skater-foxes','skater-owls','goalie-foxes','goalie-owls','boost','rink','nets']){IMG2[n]=new Image();IMG2[n].src=`art/v2/${n}@${SC}x.png?v=8`}
 // v2 sprite (faces -Y at rotation 0), drawn in rink-screen units (1 unit = @1x px), placed by its atlas pivot
-function spr2(sheet,key,x,y,a){const f=A2[sheet+'/'+key];if(!f)return;const k=1/SC;ctx.save();ctx.translate(x,y);if(a)ctx.rotate(a);
+function spr2(sheet,key,x,y,a,sc){const f=A2[sheet+'/'+key];if(!f)return;const k=(sc||1)/SC;ctx.save();ctx.translate(x,y);if(a)ctx.rotate(a);
  ctx.drawImage(IMG2[sheet],f[0],f[1],f[2],f[3],(f[4]-f[8]*f[6])*k,(f[5]-f[9]*f[7])*k,f[2]*k,f[3]*k);ctx.restore()}
 const FPS={idle:4,skate:12,shoot:14,pass:12,deke:10,poke_check:12,hit:10,fallen:4,butterfly_save:12,glove_save:12,blocker_save:12,spin:16,goal:8};
 const NF={idle:2,skate:6,shoot:4,pass:3,deke:4,poke_check:3,hit:2,fallen:2,butterfly_save:3,glove_save:3,blocker_save:3};
@@ -213,7 +214,7 @@ function draw(){ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#0a1426';ctx.fillRe
  for(let x=-256;x<=256;x+=128){spr('crowd',ck,x,-662);spr('crowd',ck,x,662,Math.PI)}
  spr2('rink','static_00',0,0);
  const gi=G.phase==='goal'?Math.min(3,Math.floor((G.goalT||0)*10)):0;
- spr2('nets',G.phase==='goal'&&G.netGoal==='right'?'top_goal_0'+gi:'top_idle_00',0,-GL);spr2('nets',G.phase==='goal'&&G.netGoal==='left'?'bottom_goal_0'+gi:'bottom_idle_00',0,GL);
+ spr2('nets',G.phase==='goal'&&G.netGoal==='right'?'top_goal_0'+gi:'top_idle_00',0,-GL,0,NS);spr2('nets',G.phase==='goal'&&G.netGoal==='left'?'bottom_goal_0'+gi:'bottom_idle_00',0,GL,0,NS);
  const c=G.ctrl;ctx.strokeStyle='#ffd23a';ctx.lineWidth=2.5;ctx.beginPath();ctx.ellipse(c.y,-c.x,17,17,0,0,Math.PI*2);ctx.stroke();
  const R=G.ref;spr('referee',fr(R),R.y,-R.x,R.a-Math.PI/2);
  const L=G.pl.slice().sort((a,b)=>b.x-a.x);
@@ -225,7 +226,7 @@ function draw(){ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#0a1426';ctx.fillRe
  ctx.setTransform(DPR,0,0,DPR,0,0);
  if(stick.id!==null){ctx.globalAlpha=0.5;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(stick.ox,stick.oy,50,0,7);ctx.fill();ctx.globalAlpha=0.8;ctx.beginPath();ctx.arc(stick.ox+stick.dx*50,stick.oy+stick.dy*50,24,0,7);ctx.fill();ctx.globalAlpha=1}
  else{ctx.globalAlpha=0.25;ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.beginPath();ctx.arc(90,H-90,50,0,7);ctx.stroke();ctx.globalAlpha=1}
- {const f=G.bcd>0?1-G.bcd/BOOST_CD:1,bf=G.bpress>0?'pressed_00':G.bcd>0?'cooldown_0'+Math.min(3,Math.floor(f*4)):G.phase==='play'?'ready_0'+(Math.floor(performance.now()/250)%2):'idle_00';if(b4.dataset.f!==bf){b4.dataset.f=bf;b4.style.backgroundImage=`url(art/v2/btn/${bf}@${SC}x.png?v=7)`}}
+ {const f=G.bcd>0?1-G.bcd/BOOST_CD:1,bf=G.bpress>0?'pressed_00':G.bcd>0?'cooldown_0'+Math.min(3,Math.floor(f*4)):G.phase==='play'?'ready_0'+(Math.floor(performance.now()/250)%2):'idle_00';if(b4.dataset.f!==bf){b4.dataset.f=bf;b4.style.backgroundImage=`url(art/v2/btn/${bf}@${SC}x.png?v=8)`}}
  tacB.textContent=tacLabel();if(tacP.style.display==='flex'&&tacP.dataset.m!==tacMode())tacShow();
  document.getElementById('s0').textContent=G.score[0];document.getElementById('s1').textContent=G.score[1];
  const t=Math.ceil(G.t);document.getElementById('clk').textContent=Math.floor(t/60)+':'+String(t%60).padStart(2,'0');
